@@ -1,0 +1,5 @@
+recursive-include pretix_dpsgw_accounting_export/static *
+recursive-include pretix_dpsgw_accounting_export/templates *
+recursive-include pretix_dpsgw_accounting_export/locale *
+include LICENSE
+exclude .gitlab-ci.yml

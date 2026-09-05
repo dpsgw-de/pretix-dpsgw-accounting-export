@@ -1,0 +1,42 @@
+[project]
+name = "pretix-dpsgw-accounting-export"
+dynamic = ["version"]
+description = "Export Invoice Data for Accounting"
+readme = "README.rst"
+license = {text = "Apache"}
+keywords = ["pretix"]
+authors = [
+    {name = "DPSG Würzburg", email = "technik@dpsg-wuerzburg.de"},
+]
+maintainers = [
+    {name = "DPSG Würzburg", email = "technik@dpsg-wuerzburg.de"},
+]
+
+dependencies = [
+]
+
+[project.entry-points."pretix.plugin"]
+pretix_dpsgw_accounting_export = "pretix_dpsgw_accounting_export:PretixPluginMeta"
+
+[project.entry-points."distutils.commands"]
+build = "pretix_plugin_build.build:CustomBuild"
+
+[build-system]
+requires = [
+    "setuptools",
+    "pretix-plugin-build",
+]
+
+[project.urls]
+homepage = "https://github.com/dpsgw-de/pretix-dpsgw-accounting-export"
+repository = "https://github.com/dpsgw-de/pretix-dpsgw-accounting-export"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "pretix_dpsgw_accounting_export.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["pretix*"]
+namespaces = false

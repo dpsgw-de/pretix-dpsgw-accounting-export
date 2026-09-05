@@ -1,0 +1,25 @@
+{% extends "pretixcontrol/organizers/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}
+    {% trans "DPSGW Accounting Export Settings" %}
+{% endblock %}
+
+{% block content %}
+    <form action="" method="post" class="form-horizontal">
+        {% csrf_token %}
+
+        <fieldset>
+            <legend>{% trans "DPSGW Accounting Export" %}</legend>
+
+            {% bootstrap_form form layout="horizontal" %}
+        </fieldset>
+
+        <div class="form-group submit-group">
+            <button type="submit" class="btn btn-primary btn-save">
+                {% trans "Save" %}
+            </button>
+        </div>
+    </form>
+{% endblock %}

@@ -1,0 +1,5 @@
+[plugin]
+package = "pretix-dpsgw-accounting-export"
+modules = [ "pretix_dpsgw_accounting_export" ]
+marketplace_name = "dpsgw-accounting-export"
+
