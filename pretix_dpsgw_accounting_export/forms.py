@@ -21,6 +21,12 @@ class AccountingSettingsForm(forms.Form):
         help_text=_("Sachkonto für den Buchhaltungsexport."),
     )
 
+    sachkonto_zusatz = forms.CharField(
+        label=_("Sachkonto Zusatzprodukte"),
+        required=False,
+        help_text=_("Sachkonto für Zusatzprodukte (Nicht-Zugangsprodukte)."),
+    )
+
     kostenstelle = forms.CharField(
         label=_("Kostenstelle"),
         required=False,
@@ -31,6 +37,12 @@ class AccountingSettingsForm(forms.Form):
         label=_("Steuerschlüssel"),
         required=False,
         help_text=_("Steuerschlüssel für den Buchhaltungsexport."),
+    )
+
+    steuerschluessel_zusatz = forms.CharField(
+        label=_("Steuerschlüssel Zusatzprodukte"),
+        required=False,
+        help_text=_("Steuerschlüssel für Zusatzprodukte (Nicht-Zugangsprodukte)."),
     )
 
     barcodeprefix = forms.CharField(

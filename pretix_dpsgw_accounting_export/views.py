@@ -36,8 +36,10 @@ class AccountingSettingsView(
             "mandant": settings.get("mandant", ""),
             "belegart": settings.get("belegart", ""),
             "sachkonto": settings.get("sachkonto", ""),
+            "sachkonto_zusatz": settings.get("sachkonto_zusatz", ""),
             "kostenstelle": settings.get("kostenstelle", ""),
             "steuerschluessel": settings.get("steuerschluessel", ""),
+            "steuerschluessel_zusatz": settings.get("steuerschluessel_zusatz", ""),
             "barcodeprefix": settings.get("barcodeprefix", ""),
         }
         return kwargs

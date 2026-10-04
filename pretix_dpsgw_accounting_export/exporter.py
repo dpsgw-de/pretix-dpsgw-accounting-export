@@ -23,95 +23,97 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
     def iterate_sheet(self, form_data, sheet):
         _ = gettext
 
-        if sheet == "lines":
+        if sheet == "invoices":
+            yield from self.iterate_invoices(form_data, sheet)
+            return
+        elif sheet == "lines":
+            yield from self.iterate_lines(form_data, sheet)
+            return
+        else:
             yield from super().iterate_sheet(form_data, sheet)
             return
 
-        if sheet != "invoices":
-            yield from super().iterate_sheet(form_data, sheet)
-            return
+    COLUMN_NAMES = [
+        "Mandantennummer",
+        "Buchungsperiode",
+        "Belegdatum",
+        "Belegart",
+        "Geschäftskennzeichen",
+        "interne Belegnummer",
+        "externe Belegnummer",
+        "Konto 1",
+        "Kostenstelle Konto 1",
+        "Projekt Konto 1",
+        "Kostentraeger Konto 1",
+        "Geschäftseinheit Konto 1",
+        "Geschäftsfeld Konto 1",
+        "StS Konto 1",
+        "Steuersatz Konto 1",
+        "Buchungsbetrag 1",
+        "Buchungstext 1",
+        "Währung",
+        "Zahlungskondition",
+        "Fälligkeit",
+        "1. Skontofrist",
+        "1. Skontoprozentsatz",
+        "2. Skontofrist",
+        "2. Skontoprozentsatz",
+        "Valuta",
+        "Zahlungsart",
+        "Kurs",
+        "Umrechnungsdatum",
+        "Verbandsmitglied",
+        "OP - Text",
+        "Sofort mahnen",
+        "Sofort zahlen",
+        "Herkunft / ID",
+        "Mahndatum",
+        "Mahnausschluss  bis",
+        "Zahlungsausschluss bis",
+        "REB - Beleg",
+        "Konzernbewegungsart",
+        "Verbundenes  Unternehmen",
+        "abzugrenzende  Perioden",
+        "Konzernsachverhalt",
+        "Ausschluss  ZentralClearing",
+        "Mahnsperrgrund",
+        "Zahlsperrgrund",
+        "OP - Status",
+        "Buchungskommentar 1",
+        "Buchungskommentar 2",
+        "Buchungskommentar 3",
+        "OP - Zusatzfeld 1",
+        "OP - Zusatzfeld 2",
+        "OP - Zusatzfeld 3",
+        "OP - Zusatzfeld 4",
+        "OP - Zusatzfeld 5",
+        "OP - Zusatzfeld 6",
+        "OP - Zusatzfeld 7",
+        "OP - Zusatzfeld 8",
+        "OP - Zusatzfeld 9",
+        "OP - Zusatzfeld 10",
+        "Konto 2",
+        "Kostenstelle Konto 2",
+        "Projekt Konto 2",
+        "Kostentraeger Konto 2",
+        "Geschäftseinheit Konto 2",
+        "Geschäftsfeld Konto 2",
+        "StS Konto 2",
+        "Steuersatz Konto 2",
+        "Buchungsbetrag Konto 2",
+        "Buchungstext 2",
+        "Konzernbewegungsart Konto 2",
+        "Verbundenes  Unternehmen Konto 2",
+        "Barcode",
+    ]
 
-        yield [
-            "Mandantennummer",
-            "Buchungsperiode",
-            "Belegdatum",
-            "Belegart",
-            "Geschäftskennzeichen",
-            "interne Belegnummer",
-            "externe Belegnummer",
-            "Konto 1",
-            "Kostenstelle Konto 1",
-            "Projekt Konto 1",
-            "Kostentraeger Konto 1",
-            "Geschäftseinheit Konto 1",
-            "Geschäftsfeld Konto 1",
-            "StS Konto 1",
-            "Steuersatz Konto 1",
-            "Buchungsbetrag 1",
-            "Buchungstext 1",
-            "Währung",
-            "Zahlungskondition",
-            "Fälligkeit",
-            "1. Skontofrist",
-            "1. Skontoprozentsatz",
-            "2. Skontofrist",
-            "2. Skontoprozentsatz",
-            "Valuta",
-            "Zahlungsart",
-            "Kurs",
-            "Umrechnungsdatum",
-            "Verbandsmitglied",
-            "OP - Text",
-            "Sofort mahnen",
-            "Sofort zahlen",
-            "Herkunft / ID",
-            "Mahndatum",
-            "Mahnausschluss  bis",
-            "Zahlungsausschluss bis",
-            "REB - Beleg",
-            "Konzernbewegungsart",
-            "Verbundenes  Unternehmen",
-            "abzugrenzende  Perioden",
-            "Konzernsachverhalt",
-            "Ausschluss  ZentralClearing",
-            "Mahnsperrgrund",
-            "Zahlsperrgrund",
-            "OP - Status",
-            "Buchungskommentar 1",
-            "Buchungskommentar 2",
-            "Buchungskommentar 3",
-            "OP - Zusatzfeld 1",
-            "OP - Zusatzfeld 2",
-            "OP - Zusatzfeld 3",
-            "OP - Zusatzfeld 4",
-            "OP - Zusatzfeld 5",
-            "OP - Zusatzfeld 6",
-            "OP - Zusatzfeld 7",
-            "OP - Zusatzfeld 8",
-            "OP - Zusatzfeld 9",
-            "OP - Zusatzfeld 10",
-            "Konto 2",
-            "Kostenstelle Konto 2",
-            "Projekt Konto 2",
-            "Kostentraeger Konto 2",
-            "Geschäftseinheit Konto 2",
-            "Geschäftsfeld Konto 2",
-            "StS Konto 2",
-            "Steuersatz Konto 2",
-            "Buchungsbetrag Konto 2",
-            "Buchungstext 2",
-            "Konzernbewegungsart Konto 2",
-            "Verbundenes  Unternehmen Konto 2",
-            "Barcode",
-
-        ]
-
+    def iterate_invoices(self, form_data, sheet):
+        yield self.COLUMN_NAMES
         settings = SettingsSandbox(
             "plugin",
             "pretix_dpsgw_accounting_export",
             self.organizer,
         )
-        settings.get("sachkonto")
 
         base_qs = self.invoices_queryset(form_data)
         qs = (
@@ -146,81 +148,14 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 key=lambda k: ids.index(k.pk),
             )
             for i in invs:
-                kn = i.event.meta_data['KN']
-                if i.event.date_to is None or i.event.date_from == i.event.date_to:
-                    buchungstext_datum = date_format(i.date, "d.m.y")
-                else:
-                    buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
-                buchungstext = (f"{i.invoice_to_company or i.invoice_to_name}: TN "
-                                f"{i.event.name} {buchungstext_datum}"
-                                + (f" KN{kn}" if kn else ""))
-                projektnummer = "UNBEKANNT ????"
-                if kn and len(kn) >= 5:
-                    projektnummer = settings.get("kostenstelle") + kn[0:2] + kn[3:5]
+                buchungstext, projektnummer = prepare_invoice_information(i, settings)
 
                 # Distinguish cancellation/Storno and invoice/Rechnung
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
-                yield [
-                    settings.get("mandant"),
-                    date_format(i.date, "m.Y"),
-                    date_format(i.date, "SHORT_DATE_FORMAT"),
-                    settings.get("belegart"),
-                    "",
-                    i.full_invoice_no,
-                    i.order.full_code,
-                    "DEBITOREN_NUMMER HIER",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    i.total_gross if i.total_gross else Decimal("0.00"),
-                    buchungstext,
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    settings.get("sachkonto"),
+                invoice_data = prepare_invoice_data(i, settings, i.total_gross, buchungstext)
+                yield invoice_data + ([''] * 41) + [
+                    settings.get("sachkonto"), # TODO: Warnung, wenn nicht nur Teilnahme-Produkte auf der Rechnung sind?
                     settings.get("kostenstelle"),
                     projektnummer,
                     "",
@@ -234,3 +169,92 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                     "",
                     settings.get("barcodeprefix") + i.full_invoice_no
                 ]
+
+    def iterate_lines(self, form_data, sheet):
+        yield self.COLUMN_NAMES
+        settings = SettingsSandbox(
+            "plugin",
+            "pretix_dpsgw_accounting_export",
+            self.organizer,
+        )
+
+        qs = InvoiceLine.objects.annotate(
+            invoice_total_gross=Subquery(
+                InvoiceLine.objects.filter(
+                    invoice=OuterRef('invoice_id')
+                ).order_by().values('invoice').annotate(
+                    s=Sum('gross_value')
+                ).values('s')
+            ),
+        ).filter(
+            invoice__in=self.invoices_queryset(form_data)
+        ).order_by('invoice__full_invoice_no', 'position').select_related(
+            'invoice', 'invoice__order', 'invoice__refers'
+        )
+        yield self.ProgressSetTotal(total=qs.count())
+
+        previous_invoice = None
+        for l in qs.iterator():
+            i = l.invoice
+            buchungstext, projektnummer = prepare_invoice_information(i, settings)
+
+            # Rechnungsdaten nur bei der ersten Zeile ausgeben
+            if previous_invoice != i.pk:
+                invoice_data = prepare_invoice_data(i, settings, l.invoice_total_gross, buchungstext)
+                previous_invoice = i.pk
+            else:
+                invoice_data = [''] * 17
+
+            # 41 leere Spalten und dahinter Zeileninformationen einfügen
+            yield invoice_data + ([''] * 41) + [
+                settings.get("sachkonto") if l.item.admission else settings.get("sachkonto_zusatz"),
+                settings.get("kostenstelle"),
+                projektnummer,
+                "",
+                "",
+                "",
+                settings.get("steuerschluessel") if l.item.admission else settings.get("steuerschluessel_zusatz"),
+                "",
+                l.gross_value,
+                l.description.replace("<br />", " - "),
+                "",
+                "",
+                settings.get("barcodeprefix") + i.full_invoice_no
+            ]
+
+
+def prepare_invoice_information(i, settings: SettingsSandbox) -> tuple[str, str]:
+    kn = i.event.meta_data['KN']
+    if i.event.date_to is None or i.event.date_from == i.event.date_to:
+        buchungstext_datum = date_format(i.date, "d.m.y")
+    else:
+        buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
+    buchungstext = (f"{i.invoice_to_company or i.invoice_to_name}: TN "
+                    f"{i.event.name} {buchungstext_datum}"
+                    + (f" KN{kn}" if kn else ""))
+    projektnummer = "UNBEKANNT ????"
+    if kn and len(kn) >= 5:
+        projektnummer = settings.get("kostenstelle") + kn[0:2] + kn[3:5]
+    return buchungstext, projektnummer
+
+
+def prepare_invoice_data(i, settings, total_gross, buchungstext):
+    return [
+        settings.get("mandant"),
+        date_format(i.date, "m.Y"),
+        date_format(i.date, "SHORT_DATE_FORMAT"),
+        settings.get("belegart"),
+        "",
+        i.full_invoice_no,
+        i.order.full_code,
+        "DEBITOREN_NUMMER HIER: " + (i.invoice_to_company or i.invoice_to_name),
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        total_gross or Decimal('0.00'),
+        buchungstext,
+    ]
