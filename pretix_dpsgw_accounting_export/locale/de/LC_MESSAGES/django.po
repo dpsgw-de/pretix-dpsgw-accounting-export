@@ -1,0 +1,101 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-05 01:34+0200\n"
+"PO-Revision-Date: \n"
+"Last-Translator: DPSG Wuerzburg\n"
+"Language-Team: \n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: pretix_dpsgw_accounting_export/apps.py:17
+#: pretix_dpsgw_accounting_export/templates/pretix_dpsgw_accounting_export/settings.html:14
+msgid "DPSGW Accounting Export"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/apps.py:19
+msgid "Export Invoice Data for Accounting"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/exporter.py:27
+msgid "Invoice lines aggregated"
+msgstr "Rechnungszeilen aggregiert"
+
+#: pretix_dpsgw_accounting_export/exporter.py:174
+msgid "TODO CONTAINS ADDITIONAL PRODUCTS"
+msgstr "TODO ZUSATZPRODUKTE ENTHALTEN"
+
+#: pretix_dpsgw_accounting_export/forms.py:7
+msgid "Mandantennummer"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:9
+msgid "Mandantennummer für den Buchhaltungsexport."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:13
+msgid "Belegart"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:15
+msgid "Belegart für den Buchhaltungsexport."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:19
+msgid "Sachkonto"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:21
+msgid "Sachkonto für den Buchhaltungsexport."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:25
+msgid "Sachkonto Zusatzprodukte"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:27
+msgid "Sachkonto für Zusatzprodukte (Nicht-Zugangsprodukte)."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:31
+msgid "Kostenstelle"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:33
+msgid "Kostenstelle für den Buchhaltungsexport."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:37
+msgid "Steuerschlüssel"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:39
+msgid "Steuerschlüssel für den Buchhaltungsexport."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:43
+msgid "Steuerschlüssel Zusatzprodukte"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:45
+msgid "Steuerschlüssel für Zusatzprodukte (Nicht-Zugangsprodukte)."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:49
+msgid "Barcode Präfix"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/forms.py:51
+msgid "Präfix vor der Rechnungsnummer im Barcode."
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/templates/pretix_dpsgw_accounting_export/settings.html:6
+msgid "DPSGW Accounting Export Settings"
+msgstr ""
+
+#: pretix_dpsgw_accounting_export/templates/pretix_dpsgw_accounting_export/settings.html:21
+msgid "Save"
+msgstr ""

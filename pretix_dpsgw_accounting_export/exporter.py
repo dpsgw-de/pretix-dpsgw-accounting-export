@@ -1,12 +1,13 @@
 from decimal import Decimal
 
-from django.db.models import F, OuterRef, Subquery, Sum
+from django.db.models import Count, Exists, F, OuterRef, Subquery, Sum
 from django.utils.formats import date_format
-from django.utils.translation import gettext
+from django.utils.translation import (
+    gettext, gettext_lazy as _, )
 
 from pretix.base.exporters.invoices import InvoiceDataExporter
 from pretix.base.exporters.invoices import chunked_iterable
-from pretix.base.models import InvoiceLine
+from pretix.base.models import Invoice, InvoiceLine
 from pretix.base.settings import SettingsSandbox
 from pretix_barcode_invoice_renderer.utils import format_date_range
 
@@ -20,6 +21,12 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
     verbose_name = "DPSG Würzburg Buchhaltungs-Export"
     description = "Exportiert die Rechnungsdaten im Format, das für den Buchhaltungsimport genutzt werden kann"
 
+    @property
+    def sheets(self):
+        return super().sheets + (
+            ('lines_aggregated', _('Invoice lines aggregated')),
+        )
+
     def iterate_sheet(self, form_data, sheet):
         _ = gettext
 
@@ -28,6 +35,9 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             return
         elif sheet == "lines":
             yield from self.iterate_lines(form_data, sheet)
+            return
+        elif sheet == "lines_aggregated":
+            yield from self.iterate_lines_aggregated(form_data, sheet)
             return
         else:
             yield from super().iterate_sheet(form_data, sheet)
@@ -134,6 +144,12 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                         s=Sum(F("gross_value") - F("tax_value"))
                     ).values("s")
                 ),
+                has_additional_products=Exists(
+                    InvoiceLine.objects.filter(
+                        invoice=OuterRef("pk"),
+                        item__admission=False,
+                    )
+                ),
             )
         )
 
@@ -148,16 +164,16 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 key=lambda k: ids.index(k.pk),
             )
             for i in invs:
-                buchungstext, projektnummer = prepare_invoice_information(i, settings)
-
+                buchungstext = get_buchungstext(i)
                 # Distinguish cancellation/Storno and invoice/Rechnung
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
                 invoice_data = prepare_invoice_data(i, settings, i.total_gross, buchungstext)
                 yield invoice_data + ([''] * 41) + [
-                    settings.get("sachkonto"), # TODO: Warnung, wenn nicht nur Teilnahme-Produkte auf der Rechnung sind?
+                    settings.get("sachkonto") if not i.has_additional_products else
+                        _('TODO CONTAINS ADDITIONAL PRODUCTS'),
                     settings.get("kostenstelle"),
-                    projektnummer,
+                    (get_projektnummer(i, settings)),
                     "",
                     "",
                     "",
@@ -196,11 +212,9 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         previous_invoice = None
         for l in qs.iterator():
             i = l.invoice
-            buchungstext, projektnummer = prepare_invoice_information(i, settings)
-
             # Rechnungsdaten nur bei der ersten Zeile ausgeben
             if previous_invoice != i.pk:
-                invoice_data = prepare_invoice_data(i, settings, l.invoice_total_gross, buchungstext)
+                invoice_data = prepare_invoice_data(i, settings, l.invoice_total_gross, get_buchungstext(i))
                 previous_invoice = i.pk
             else:
                 invoice_data = [''] * 17
@@ -209,7 +223,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             yield invoice_data + ([''] * 41) + [
                 settings.get("sachkonto") if l.item.admission else settings.get("sachkonto_zusatz"),
                 settings.get("kostenstelle"),
-                projektnummer,
+                (get_projektnummer(i, settings)),
                 "",
                 "",
                 "",
@@ -222,21 +236,151 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 settings.get("barcodeprefix") + i.full_invoice_no
             ]
 
+    def iterate_lines_aggregated(self, form_data, sheet):
+        yield self.COLUMN_NAMES
+        settings = SettingsSandbox(
+            "plugin",
+            "pretix_dpsgw_accounting_export",
+            self.organizer,
+        )
 
-def prepare_invoice_information(i, settings: SettingsSandbox) -> tuple[str, str]:
+        invoices = list(
+            self.invoices_queryset(form_data)
+            .select_related("order", "order__event", "refers")
+            .order_by("full_invoice_no")
+        )
+
+        invoice_ids = [i.pk for i in invoices]
+
+        base_qs = InvoiceLine.objects.filter(
+            invoice_id__in=invoice_ids
+        )
+        # Gesamtbetrag je Rechnung
+        invoice_totals = {
+            row["invoice"]: row["total_gross"]
+            for row in (
+                base_qs
+                .values("invoice")
+                .annotate(total_gross=Sum("gross_value"))
+            )
+        }
+
+        # Alle Teilnahme-Produkte einer Rechnung zu einer Zeile zusammenfassen
+        admission_qs = (
+            base_qs
+            .filter(item__admission=True)
+            .values("invoice")
+            .annotate(
+                quantity=Count("id"),
+                total_gross=Sum("gross_value"),
+            )
+        )
+
+        # Zusatzprodukte pro Produkt und Rechnung zusammenfassen
+        additional_qs = (
+            base_qs
+            .filter(item__admission=False)
+            .values(
+                "invoice",
+                "item",
+                "item__name",
+            )
+            .annotate(
+                quantity=Count("id"),
+                total_gross=Sum("gross_value"),
+            )
+            .order_by("invoice", "item__name")
+        )
+
+        # Nach Rechnung gruppieren, damit wir die Ausgabe in der gleichen
+        # Reihenfolge wie bei iterate_lines erzeugen können.
+        admission_by_invoice = {row["invoice"]: row for row in admission_qs}
+        admission_count = len(admission_by_invoice)
+
+        additional_by_invoice = {}
+        additional_count = 0
+        for row in additional_qs:
+            additional_by_invoice.setdefault(row["invoice"], []).append(row)
+            additional_count += 1
+
+        yield self.ProgressSetTotal(total=admission_count + additional_count)
+
+        for i in invoices:
+            invoice_data = prepare_invoice_data(
+                i,
+                settings,
+                invoice_totals.get(i.pk, Decimal("0.00")),
+                get_buchungstext(i),
+            )
+            first_line = True
+
+            # ------------------------------------------------------------
+            # Teilnahme-Produkte
+            # ------------------------------------------------------------
+            admission = admission_by_invoice.get(i.pk)
+
+            if admission:
+                yield invoice_data + ([''] * 41) + [
+                    settings.get("sachkonto"),
+                    settings.get("kostenstelle"),
+                    (get_projektnummer(i, settings)),
+                    "",
+                    "",
+                    "",
+                    settings.get("steuerschluessel"),
+                    "",
+                    admission["total_gross"],
+                    get_buchungstext(i, admission["quantity"]),
+                    "",
+                    "",
+                    settings.get("barcodeprefix") + i.full_invoice_no,
+                ]
+                first_line = False
+
+            # ------------------------------------------------------------
+            # Zusatzprodukte
+            # ------------------------------------------------------------
+            for additional in additional_by_invoice.get(i.pk, []):
+                if first_line:
+                    first_line = False
+                else:
+                    invoice_data = [''] * 17
+
+                quantity = f'{additional["quantity"]} x ' if additional["quantity"] > 1 else ''
+                yield invoice_data + ([''] * 41) + [
+                    settings.get("sachkonto_zusatz"),
+                    settings.get("kostenstelle"),
+                    (get_projektnummer(i, settings)),
+                    "",
+                    "",
+                    "",
+                    settings.get("steuerschluessel_zusatz"),
+                    "",
+                    additional["total_gross"],
+                    f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}',
+                    "",
+                    "",
+                    settings.get("barcodeprefix") + i.full_invoice_no,
+                ]
+
+def get_buchungstext(i: Invoice, quantity=None) -> str:
     kn = i.event.meta_data['KN']
     if i.event.date_to is None or i.event.date_from == i.event.date_to:
         buchungstext_datum = date_format(i.date, "d.m.y")
     else:
         buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
-    buchungstext = (f"{i.invoice_to_company or i.invoice_to_name}: TN "
+    quantity_str = f'{quantity} x ' if quantity and quantity > 1 else ''
+    buchungstext = (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
                     f"{i.event.name} {buchungstext_datum}"
                     + (f" KN{kn}" if kn else ""))
+    return buchungstext
+
+def get_projektnummer(i: Invoice, settings: SettingsSandbox) -> str:
+    kn = i.event.meta_data['KN']
     projektnummer = "UNBEKANNT ????"
     if kn and len(kn) >= 5:
         projektnummer = settings.get("kostenstelle") + kn[0:2] + kn[3:5]
-    return buchungstext, projektnummer
-
+    return projektnummer
 
 def prepare_invoice_data(i, settings, total_gross, buchungstext):
     return [
