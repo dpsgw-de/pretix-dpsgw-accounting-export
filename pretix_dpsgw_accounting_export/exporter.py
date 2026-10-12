@@ -14,6 +14,12 @@ from pretix_barcode_invoice_renderer.utils import format_date_range
 
 # This implementation is based on InvoiceDataExporter from Pretix
 
+
+## TODO: Umbau für SettingsSandbox
+#   https://chatgpt.com/g/g-p-6a9c188bd8688191b9d224dbd5e4984e-pretix-accounting-export/c/6aca2268-0b4c-83eb-90e4-7507e261f707
+#   https://chatgpt.com/share/6aca231c-fd78-83eb-aab9-acf47eb0c535
+## TODO: Ganzes Repo von ChatGPT bewerten lassen, wenn alles gepushed ist
+
 class ExtendedInvoiceDataExporter(InvoiceDataExporter):
     """Invoice data export with an additional full order code column."""
 
@@ -30,14 +36,19 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
     def iterate_sheet(self, form_data, sheet):
         _ = gettext
 
+        settings = SettingsSandbox(
+            "plugin",
+            "pretix_dpsgw_accounting_export",
+            self.organizer,
+        )
         if sheet == "invoices":
-            yield from self.iterate_invoices(form_data, sheet)
+            yield from self.iterate_invoices(form_data, settings)
             return
         elif sheet == "lines":
-            yield from self.iterate_lines(form_data, sheet)
+            yield from self.iterate_lines(form_data, settings)
             return
         elif sheet == "lines_aggregated":
-            yield from self.iterate_lines_aggregated(form_data, sheet)
+            yield from self.iterate_lines_aggregated(form_data, settings)
             return
         else:
             yield from super().iterate_sheet(form_data, sheet)
@@ -117,13 +128,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         "Barcode",
     ]
 
-    def iterate_invoices(self, form_data, sheet):
+    def iterate_invoices(self, form_data, settings: SettingsSandbox):
         yield self.COLUMN_NAMES
-        settings = SettingsSandbox(
-            "plugin",
-            "pretix_dpsgw_accounting_export",
-            self.organizer,
-        )
 
         base_qs = self.invoices_queryset(form_data)
         qs = (
@@ -169,30 +175,13 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
                 invoice_data = prepare_invoice_data(i, settings, i.total_gross, buchungstext)
-                yield invoice_data + ([''] * 41) + [
-                    settings.get("sachkonto") if not i.has_additional_products else
-                        _('TODO CONTAINS ADDITIONAL PRODUCTS'),
-                    settings.get("kostenstelle"),
-                    (get_projektnummer(i, settings)),
-                    "",
-                    "",
-                    "",
-                    settings.get("steuerschluessel"),
-                    "",
-                    i.total_gross if i.total_gross else Decimal("0.00"),
-                    buchungstext,
-                    "",
-                    "",
-                    settings.get("barcodeprefix") + i.full_invoice_no
-                ]
+                sachkonto = settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
+                steuerschluessel = settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
+                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, sachkonto, steuerschluessel, i.total_gross, buchungstext)
+                yield combine_line(invoice_data, sachkonto_buchung)
 
-    def iterate_lines(self, form_data, sheet):
+    def iterate_lines(self, form_data, settings: SettingsSandbox):
         yield self.COLUMN_NAMES
-        settings = SettingsSandbox(
-            "plugin",
-            "pretix_dpsgw_accounting_export",
-            self.organizer,
-        )
 
         qs = InvoiceLine.objects.annotate(
             invoice_total_gross=Subquery(
@@ -220,29 +209,14 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 invoice_data = [''] * 17
 
             # 41 leere Spalten und dahinter Zeileninformationen einfügen
-            yield invoice_data + ([''] * 41) + [
-                settings.get("sachkonto") if l.item.admission else settings.get("sachkonto_zusatz"),
-                settings.get("kostenstelle"),
-                (get_projektnummer(i, settings)),
-                "",
-                "",
-                "",
-                settings.get("steuerschluessel") if l.item.admission else settings.get("steuerschluessel_zusatz"),
-                "",
-                l.gross_value,
-                l.description.replace("<br />", " - "),
-                "",
-                "",
-                settings.get("barcodeprefix") + i.full_invoice_no
-            ]
+            sachkonto = settings.get("sachkonto") if l.item.admission else settings.get("sachkonto_zusatz")
+            steuerschluessel = settings.get("steuerschluessel") if l.item.admission else settings.get("steuerschluessel_zusatz")
+            sachkonto_buchung = prepare_sachkonto_buchung(i, settings, sachkonto, steuerschluessel, l.gross_value,
+                                                          l.description.replace("<br />", " - "))
+            yield combine_line(invoice_data, sachkonto_buchung)
 
-    def iterate_lines_aggregated(self, form_data, sheet):
+    def iterate_lines_aggregated(self, form_data, settings: SettingsSandbox):
         yield self.COLUMN_NAMES
-        settings = SettingsSandbox(
-            "plugin",
-            "pretix_dpsgw_accounting_export",
-            self.organizer,
-        )
 
         invoices = list(
             self.invoices_queryset(form_data)
@@ -320,21 +294,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             admission = admission_by_invoice.get(i.pk)
 
             if admission:
-                yield invoice_data + ([''] * 41) + [
-                    settings.get("sachkonto"),
-                    settings.get("kostenstelle"),
-                    (get_projektnummer(i, settings)),
-                    "",
-                    "",
-                    "",
-                    settings.get("steuerschluessel"),
-                    "",
-                    admission["total_gross"],
-                    get_buchungstext(i, admission["quantity"]),
-                    "",
-                    "",
-                    settings.get("barcodeprefix") + i.full_invoice_no,
-                ]
+                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, settings.get("sachkonto"), settings.get("steuerschluessel"), admission["total_gross"], get_buchungstext(i, admission["quantity"]))
+                yield combine_line(invoice_data, sachkonto_buchung)
                 first_line = False
 
             # ------------------------------------------------------------
@@ -347,21 +308,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                     invoice_data = [''] * 17
 
                 quantity = f'{additional["quantity"]} x ' if additional["quantity"] > 1 else ''
-                yield invoice_data + ([''] * 41) + [
-                    settings.get("sachkonto_zusatz"),
-                    settings.get("kostenstelle"),
-                    (get_projektnummer(i, settings)),
-                    "",
-                    "",
-                    "",
-                    settings.get("steuerschluessel_zusatz"),
-                    "",
-                    additional["total_gross"],
-                    f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}',
-                    "",
-                    "",
-                    settings.get("barcodeprefix") + i.full_invoice_no,
-                ]
+                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, settings.get("sachkonto_zusatz"), settings.get("steuerschluessel_zusatz"), additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
+                yield combine_line(invoice_data, sachkonto_buchung)
 
 def get_buchungstext(i: Invoice, quantity=None) -> str:
     kn = i.event.meta_data['KN']
@@ -370,10 +318,9 @@ def get_buchungstext(i: Invoice, quantity=None) -> str:
     else:
         buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
     quantity_str = f'{quantity} x ' if quantity and quantity > 1 else ''
-    buchungstext = (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
-                    f"{i.event.name} {buchungstext_datum}"
-                    + (f" KN{kn}" if kn else ""))
-    return buchungstext
+    return (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
+            f"{i.event.name} {buchungstext_datum}"
+            + (f" KN{kn}" if kn else ""))
 
 def get_projektnummer(i: Invoice, settings: SettingsSandbox) -> str:
     kn = i.event.meta_data['KN']
@@ -382,7 +329,8 @@ def get_projektnummer(i: Invoice, settings: SettingsSandbox) -> str:
         projektnummer = settings.get("kostenstelle") + kn[0:2] + kn[3:5]
     return projektnummer
 
-def prepare_invoice_data(i, settings, total_gross, buchungstext):
+# Invoice data = left part = Grunddaten + Buchung auf Debitorenkonto
+def prepare_invoice_data(i, settings: SettingsSandbox, total_gross, buchungstext):
     return [
         settings.get("mandant"),
         date_format(i.date, "m.Y"),
@@ -402,3 +350,25 @@ def prepare_invoice_data(i, settings, total_gross, buchungstext):
         total_gross or Decimal('0.00'),
         buchungstext,
     ]
+
+# right part = Buchung auf Sachkonto
+def prepare_sachkonto_buchung(i: Invoice, settings: SettingsSandbox, sachkonto: str, steuerschluessel: str, betrag,
+                              buchungstext: str) -> list[str]:
+    return [
+        sachkonto,
+        settings.get("kostenstelle"),
+        (get_projektnummer(i, settings)),
+        "",
+        "",
+        "",
+        steuerschluessel,
+        "",
+        betrag if betrag else Decimal("0.00"),
+        buchungstext,
+        "",
+        "",
+        settings.get("barcodeprefix") + i.full_invoice_no
+    ]
+
+def combine_line(invoice_data: list, sachkonto_buchung: list) -> list[str]:
+    return invoice_data + ([''] * 41) + sachkonto_buchung
