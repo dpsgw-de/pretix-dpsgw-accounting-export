@@ -176,8 +176,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
                 invoice_data = self.prepare_invoice_data(i, i.total_gross, buchungstext)
-                sachkonto = self.settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
-                steuerschluessel = self.settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
+                sachkonto = self.settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
+                steuerschluessel = self.settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
                 sachkonto_buchung = self.prepare_sachkonto_buchung(i, sachkonto, steuerschluessel, i.total_gross, buchungstext)
                 yield combine_line(invoice_data, sachkonto_buchung)
 
