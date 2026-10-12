@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Exists, F, OuterRef, Subquery, Sum
 from django.utils.formats import date_format
+from django.utils.functional import cached_property
 from django.utils.translation import (
     gettext, gettext_lazy as _, )
 
@@ -15,9 +16,6 @@ from pretix_barcode_invoice_renderer.utils import format_date_range
 # This implementation is based on InvoiceDataExporter from Pretix
 
 
-## TODO: Umbau für SettingsSandbox
-#   https://chatgpt.com/g/g-p-6a9c188bd8688191b9d224dbd5e4984e-pretix-accounting-export/c/6aca2268-0b4c-83eb-90e4-7507e261f707
-#   https://chatgpt.com/share/6aca231c-fd78-83eb-aab9-acf47eb0c535
 ## TODO: Ganzes Repo von ChatGPT bewerten lassen, wenn alles gepushed ist
 
 class ExtendedInvoiceDataExporter(InvoiceDataExporter):
@@ -33,22 +31,25 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             ('lines_aggregated', _('Invoice lines aggregated')),
         )
 
-    def iterate_sheet(self, form_data, sheet):
-        _ = gettext
-
-        settings = SettingsSandbox(
+    @cached_property
+    def settings(self) -> SettingsSandbox:
+        return SettingsSandbox(
             "plugin",
             "pretix_dpsgw_accounting_export",
             self.organizer,
         )
+
+    def iterate_sheet(self, form_data, sheet):
+        _ = gettext
+
         if sheet == "invoices":
-            yield from self.iterate_invoices(form_data, settings)
+            yield from self.iterate_invoices(form_data)
             return
         elif sheet == "lines":
-            yield from self.iterate_lines(form_data, settings)
+            yield from self.iterate_lines(form_data)
             return
         elif sheet == "lines_aggregated":
-            yield from self.iterate_lines_aggregated(form_data, settings)
+            yield from self.iterate_lines_aggregated(form_data)
             return
         else:
             yield from super().iterate_sheet(form_data, sheet)
@@ -128,7 +129,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         "Barcode",
     ]
 
-    def iterate_invoices(self, form_data, settings: SettingsSandbox):
+    def iterate_invoices(self, form_data):
         yield self.COLUMN_NAMES
 
         base_qs = self.invoices_queryset(form_data)
@@ -170,17 +171,17 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 key=lambda k: ids.index(k.pk),
             )
             for i in invs:
-                buchungstext = get_buchungstext(i)
+                buchungstext = self.get_buchungstext(i)
                 # Distinguish cancellation/Storno and invoice/Rechnung
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
-                invoice_data = prepare_invoice_data(i, settings, i.total_gross, buchungstext)
-                sachkonto = settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
-                steuerschluessel = settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
-                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, sachkonto, steuerschluessel, i.total_gross, buchungstext)
+                invoice_data = self.prepare_invoice_data(i, i.total_gross, buchungstext)
+                sachkonto = self.settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
+                steuerschluessel = self.settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS'),
+                sachkonto_buchung = self.prepare_sachkonto_buchung(i, sachkonto, steuerschluessel, i.total_gross, buchungstext)
                 yield combine_line(invoice_data, sachkonto_buchung)
 
-    def iterate_lines(self, form_data, settings: SettingsSandbox):
+    def iterate_lines(self, form_data):
         yield self.COLUMN_NAMES
 
         qs = InvoiceLine.objects.annotate(
@@ -203,19 +204,19 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             i = l.invoice
             # Rechnungsdaten nur bei der ersten Zeile ausgeben
             if previous_invoice != i.pk:
-                invoice_data = prepare_invoice_data(i, settings, l.invoice_total_gross, get_buchungstext(i))
+                invoice_data = self.prepare_invoice_data(i, l.invoice_total_gross, self.get_buchungstext(i))
                 previous_invoice = i.pk
             else:
                 invoice_data = [''] * 17
 
             # 41 leere Spalten und dahinter Zeileninformationen einfügen
-            sachkonto = settings.get("sachkonto") if l.item.admission else settings.get("sachkonto_zusatz")
-            steuerschluessel = settings.get("steuerschluessel") if l.item.admission else settings.get("steuerschluessel_zusatz")
-            sachkonto_buchung = prepare_sachkonto_buchung(i, settings, sachkonto, steuerschluessel, l.gross_value,
+            sachkonto = self.settings.get("sachkonto") if l.item.admission else self.settings.get("sachkonto_zusatz")
+            steuerschluessel = self.settings.get("steuerschluessel") if l.item.admission else self.settings.get("steuerschluessel_zusatz")
+            sachkonto_buchung = self.prepare_sachkonto_buchung(i, sachkonto, steuerschluessel, l.gross_value,
                                                           l.description.replace("<br />", " - "))
             yield combine_line(invoice_data, sachkonto_buchung)
 
-    def iterate_lines_aggregated(self, form_data, settings: SettingsSandbox):
+    def iterate_lines_aggregated(self, form_data):
         yield self.COLUMN_NAMES
 
         invoices = list(
@@ -280,11 +281,10 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         yield self.ProgressSetTotal(total=admission_count + additional_count)
 
         for i in invoices:
-            invoice_data = prepare_invoice_data(
+            invoice_data = self.prepare_invoice_data(
                 i,
-                settings,
                 invoice_totals.get(i.pk, Decimal("0.00")),
-                get_buchungstext(i),
+                self.get_buchungstext(i),
             )
             first_line = True
 
@@ -294,7 +294,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             admission = admission_by_invoice.get(i.pk)
 
             if admission:
-                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, settings.get("sachkonto"), settings.get("steuerschluessel"), admission["total_gross"], get_buchungstext(i, admission["quantity"]))
+                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.get("sachkonto"), self.settings.get("steuerschluessel"), admission["total_gross"], self.get_buchungstext(i, admission["quantity"]))
                 yield combine_line(invoice_data, sachkonto_buchung)
                 first_line = False
 
@@ -308,67 +308,68 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                     invoice_data = [''] * 17
 
                 quantity = f'{additional["quantity"]} x ' if additional["quantity"] > 1 else ''
-                sachkonto_buchung = prepare_sachkonto_buchung(i, settings, settings.get("sachkonto_zusatz"), settings.get("steuerschluessel_zusatz"), additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
+                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.get("sachkonto_zusatz"), self.settings.get("steuerschluessel_zusatz"), additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
                 yield combine_line(invoice_data, sachkonto_buchung)
 
-def get_buchungstext(i: Invoice, quantity=None) -> str:
-    kn = i.event.meta_data['KN']
-    if i.event.date_to is None or i.event.date_from == i.event.date_to:
-        buchungstext_datum = date_format(i.date, "d.m.y")
-    else:
-        buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
-    quantity_str = f'{quantity} x ' if quantity and quantity > 1 else ''
-    return (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
-            f"{i.event.name} {buchungstext_datum}"
-            + (f" KN{kn}" if kn else ""))
+    @staticmethod
+    def get_buchungstext(i: Invoice, quantity=None) -> str:
+        kn = i.event.meta_data['KN']
+        if i.event.date_to is None or i.event.date_from == i.event.date_to:
+            buchungstext_datum = date_format(i.date, "d.m.y")
+        else:
+            buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
+        quantity_str = f'{quantity} x ' if quantity and quantity > 1 else ''
+        return (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
+                f"{i.event.name} {buchungstext_datum}"
+                + (f" KN{kn}" if kn else ""))
 
-def get_projektnummer(i: Invoice, settings: SettingsSandbox) -> str:
-    kn = i.event.meta_data['KN']
-    projektnummer = "UNBEKANNT ????"
-    if kn and len(kn) >= 5:
-        projektnummer = settings.get("kostenstelle") + kn[0:2] + kn[3:5]
-    return projektnummer
+    def get_projektnummer(self, i: Invoice) -> str:
+        kn = i.event.meta_data['KN']
+        projektnummer = "UNBEKANNT ????"
+        if kn and len(kn) >= 5:
+            projektnummer = self.settings.get("kostenstelle") + kn[0:2] + kn[3:5]
+        return projektnummer
 
-# Invoice data = left part = Grunddaten + Buchung auf Debitorenkonto
-def prepare_invoice_data(i, settings: SettingsSandbox, total_gross, buchungstext):
-    return [
-        settings.get("mandant"),
-        date_format(i.date, "m.Y"),
-        date_format(i.date, "SHORT_DATE_FORMAT"),
-        settings.get("belegart"),
-        "",
-        i.full_invoice_no,
-        i.order.full_code,
-        "DEBITOREN_NUMMER HIER: " + (i.invoice_to_company or i.invoice_to_name),
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        total_gross or Decimal('0.00'),
-        buchungstext,
-    ]
+    # Invoice data = left part = Grunddaten + Buchung auf Debitorenkonto
+    def prepare_invoice_data(self, i, total_gross, buchungstext):
+        return [
+            self.settings.get("mandant"),
+            date_format(i.date, "m.Y"),
+            date_format(i.date, "SHORT_DATE_FORMAT"),
+            self.settings.get("belegart"),
+            "",
+            i.full_invoice_no,
+            i.order.full_code,
+            "DEBITOREN_NUMMER HIER: " + (i.invoice_to_company or i.invoice_to_name),
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            total_gross or Decimal('0.00'),
+            buchungstext,
+        ]
 
-# right part = Buchung auf Sachkonto
-def prepare_sachkonto_buchung(i: Invoice, settings: SettingsSandbox, sachkonto: str, steuerschluessel: str, betrag,
-                              buchungstext: str) -> list[str]:
-    return [
-        sachkonto,
-        settings.get("kostenstelle"),
-        (get_projektnummer(i, settings)),
-        "",
-        "",
-        "",
-        steuerschluessel,
-        "",
-        betrag if betrag else Decimal("0.00"),
-        buchungstext,
-        "",
-        "",
-        settings.get("barcodeprefix") + i.full_invoice_no
-    ]
+    # right part = Buchung auf Sachkonto
+    def prepare_sachkonto_buchung(self, i: Invoice, sachkonto: str, steuerschluessel: str, betrag,
+                                  buchungstext: str) -> list[str]:
+        return [
+            sachkonto,
+            self.settings.get("kostenstelle"),
+            (self.get_projektnummer(i)),
+            "",
+            "",
+            "",
+            steuerschluessel,
+            "",
+            betrag if betrag else Decimal("0.00"),
+            buchungstext,
+            "",
+            "",
+            self.settings.get("barcodeprefix") + i.full_invoice_no
+        ]
 
 def combine_line(invoice_data: list, sachkonto_buchung: list) -> list[str]:
     return invoice_data + ([''] * 41) + sachkonto_buchung
