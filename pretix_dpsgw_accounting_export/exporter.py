@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from django.db.models import Count, Exists, F, OuterRef, Subquery, Sum
@@ -196,8 +197,10 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             ),
         ).filter(
             invoice__in=self.invoices_queryset(form_data)
-        ).order_by('invoice__full_invoice_no', 'position').select_related(
-            'invoice', 'invoice__order', 'invoice__refers'
+        ).order_by(
+            'invoice__full_invoice_no', 'position'
+        ).select_related(
+            'invoice', 'invoice__order', 'invoice__refers', 'item'
         )
         yield self.ProgressSetTotal(total=qs.count())
 
@@ -314,8 +317,15 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 yield combine_line(invoice_data, sachkonto_buchung)
 
     @staticmethod
+    def get_kn(i: Invoice) -> str:
+        kn = (i.event.meta_data or {}).get("KN")
+        if kn is None or not str(kn).strip():
+            raise ExportError(f"Für die Veranstaltung „{i.event.name}“ ist keine gültige KN hinterlegt.")
+        return str(kn).strip()
+
+    @staticmethod
     def get_buchungstext(i: Invoice, quantity=None) -> str:
-        kn = i.event.meta_data['KN']
+        kn = ExtendedInvoiceDataExporter.get_kn(i)
         if i.event.date_to is None or i.event.date_from == i.event.date_to:
             buchungstext_datum = date_format(i.date, "d.m.y")
         else:
@@ -326,11 +336,11 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 + (f" KN{kn}" if kn else ""))
 
     def get_projektnummer(self, i: Invoice) -> str:
-        kn = i.event.meta_data['KN']
-        projektnummer = "UNBEKANNT ????"
-        if kn and len(kn) >= 5:
-            projektnummer = self.settings.kostenstelle + kn[0:2] + kn[3:5]
-        return projektnummer
+        kn = ExtendedInvoiceDataExporter.get_kn(i)
+        if kn and len(kn) >= 5 and re.fullmatch(r"\d{2}-\d{2}", kn):
+            return self.settings.kostenstelle + kn[0:2] + kn[3:5]
+        else:
+            return "UNBEKANNT ????"
 
     # Invoice data = left part = Grunddaten + Buchung auf Debitorenkonto
     def prepare_invoice_data(self, i, total_gross, buchungstext):
