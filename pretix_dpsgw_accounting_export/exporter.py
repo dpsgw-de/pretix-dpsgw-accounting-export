@@ -9,8 +9,10 @@ from django.utils.translation import (
 from pretix.base.exporters.invoices import InvoiceDataExporter
 from pretix.base.exporters.invoices import chunked_iterable
 from pretix.base.models import Invoice, InvoiceLine
+from pretix.base.services.export import ExportError
 from pretix.base.settings import SettingsSandbox
 from pretix_barcode_invoice_renderer.utils import format_date_range
+from pretix_dpsgw_accounting_export.export_settings import ExportSettings
 
 
 # This implementation is based on InvoiceDataExporter from Pretix
@@ -32,12 +34,12 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         )
 
     @cached_property
-    def settings(self) -> SettingsSandbox:
-        return SettingsSandbox(
+    def settings(self) -> ExportSettings:
+        return ExportSettings.from_settings(SettingsSandbox(
             "plugin",
             "pretix_dpsgw_accounting_export",
             self.organizer,
-        )
+        ))
 
     def iterate_sheet(self, form_data, sheet):
         _ = gettext
@@ -176,8 +178,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 # _("Cancellation") if i.is_cancellation else _("Invoice"),
 
                 invoice_data = self.prepare_invoice_data(i, i.total_gross, buchungstext)
-                sachkonto = self.settings.get("sachkonto") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
-                steuerschluessel = self.settings.get("steuerschluessel") if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
+                sachkonto = self.settings.sachkonto if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
+                steuerschluessel = self.settings.steuerschluessel if not i.has_additional_products else _('TODO CONTAINS ADDITIONAL PRODUCTS')
                 sachkonto_buchung = self.prepare_sachkonto_buchung(i, sachkonto, steuerschluessel, i.total_gross, buchungstext)
                 yield combine_line(invoice_data, sachkonto_buchung)
 
@@ -210,8 +212,8 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 invoice_data = [''] * 17
 
             # 41 leere Spalten und dahinter Zeileninformationen einfügen
-            sachkonto = self.settings.get("sachkonto") if l.item.admission else self.settings.get("sachkonto_zusatz")
-            steuerschluessel = self.settings.get("steuerschluessel") if l.item.admission else self.settings.get("steuerschluessel_zusatz")
+            sachkonto = self.settings.sachkonto if l.item.admission else self.settings.sachkonto_zusatz
+            steuerschluessel = self.settings.steuerschluessel if l.item.admission else self.settings.steuerschluessel_zusatz
             sachkonto_buchung = self.prepare_sachkonto_buchung(i, sachkonto, steuerschluessel, l.gross_value,
                                                           l.description.replace("<br />", " - "))
             yield combine_line(invoice_data, sachkonto_buchung)
@@ -294,7 +296,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             admission = admission_by_invoice.get(i.pk)
 
             if admission:
-                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.get("sachkonto"), self.settings.get("steuerschluessel"), admission["total_gross"], self.get_buchungstext(i, admission["quantity"]))
+                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.sachkonto, self.settings.steuerschluessel, admission["total_gross"], self.get_buchungstext(i, admission["quantity"]))
                 yield combine_line(invoice_data, sachkonto_buchung)
                 first_line = False
 
@@ -308,7 +310,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                     invoice_data = [''] * 17
 
                 quantity = f'{additional["quantity"]} x ' if additional["quantity"] > 1 else ''
-                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.get("sachkonto_zusatz"), self.settings.get("steuerschluessel_zusatz"), additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
+                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.sachkonto_zusatz, self.settings.steuerschluessel_zusatz, additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
                 yield combine_line(invoice_data, sachkonto_buchung)
 
     @staticmethod
@@ -327,16 +329,16 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         kn = i.event.meta_data['KN']
         projektnummer = "UNBEKANNT ????"
         if kn and len(kn) >= 5:
-            projektnummer = self.settings.get("kostenstelle") + kn[0:2] + kn[3:5]
+            projektnummer = self.settings.kostenstelle + kn[0:2] + kn[3:5]
         return projektnummer
 
     # Invoice data = left part = Grunddaten + Buchung auf Debitorenkonto
     def prepare_invoice_data(self, i, total_gross, buchungstext):
         return [
-            self.settings.get("mandant"),
+            self.settings.mandant,
             date_format(i.date, "m.Y"),
             date_format(i.date, "SHORT_DATE_FORMAT"),
-            self.settings.get("belegart"),
+            self.settings.belegart,
             "",
             i.full_invoice_no,
             i.order.full_code,
@@ -357,7 +359,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                                   buchungstext: str) -> list[str]:
         return [
             sachkonto,
-            self.settings.get("kostenstelle"),
+            self.settings.kostenstelle,
             (self.get_projektnummer(i)),
             "",
             "",
@@ -368,8 +370,14 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             buchungstext,
             "",
             "",
-            self.settings.get("barcodeprefix") + i.full_invoice_no
+            self.settings.barcodeprefix + i.full_invoice_no
         ]
 
 def combine_line(invoice_data: list, sachkonto_buchung: list) -> list[str]:
-    return invoice_data + ([''] * 41) + sachkonto_buchung
+    row = invoice_data + ([''] * 41) + sachkonto_buchung
+    if len(row) != len(ExtendedInvoiceDataExporter.COLUMN_NAMES):
+        raise ExportError(
+            f"Ungültige Anzahl an Spalten: "
+            f"{len(row)} Werte, aber {len(ExtendedInvoiceDataExporter.COLUMN_NAMES)} Überschriften."
+        )
+    return row
