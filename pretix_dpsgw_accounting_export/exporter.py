@@ -12,7 +12,7 @@ from pretix.base.exporters.invoices import chunked_iterable
 from pretix.base.models import Invoice, InvoiceLine
 from pretix.base.services.export import ExportError
 from pretix.base.settings import SettingsSandbox
-from pretix_barcode_invoice_renderer.utils import format_date_range
+from pretix_dpsgw_accounting_export.utils import format_date_range
 from pretix_dpsgw_accounting_export.export_settings import ExportSettings
 
 
