@@ -245,23 +245,12 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             )
         }
 
-        # Alle Teilnahme-Produkte einer Rechnung zu einer Zeile zusammenfassen
-        admission_qs = (
-            base_qs
-            .filter(item__admission=True)
-            .values("invoice")
-            .annotate(
-                quantity=Count("id"),
-                total_gross=Sum("gross_value"),
-            )
-        )
-
         # Zusatzprodukte pro Produkt und Rechnung zusammenfassen
-        additional_qs = (
+        lines_qs = (
             base_qs
-            .filter(item__admission=False)
             .values(
                 "invoice",
+                "item__admission",
                 "item",
                 "item__name",
             )
@@ -269,21 +258,18 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 quantity=Count("id"),
                 total_gross=Sum("gross_value"),
             )
-            .order_by("invoice", "item__name")
+            .order_by("invoice", "-item__admission", "item__name")
         )
 
         # Nach Rechnung gruppieren, damit wir die Ausgabe in der gleichen
         # Reihenfolge wie bei iterate_lines erzeugen können.
-        admission_by_invoice = {row["invoice"]: row for row in admission_qs}
-        admission_count = len(admission_by_invoice)
+        lines_by_invoice = {}
+        line_count = 0
+        for line in lines_qs:
+            lines_by_invoice.setdefault(line["invoice"], []).append(line)
+            line_count += 1
 
-        additional_by_invoice = {}
-        additional_count = 0
-        for row in additional_qs:
-            additional_by_invoice.setdefault(row["invoice"], []).append(row)
-            additional_count += 1
-
-        yield self.ProgressSetTotal(total=admission_count + additional_count)
+        yield self.ProgressSetTotal(total=line_count)
 
         for i in invoices:
             invoice_data = self.prepare_invoice_data(
@@ -293,27 +279,28 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             )
             first_line = True
 
-            # ------------------------------------------------------------
-            # Teilnahme-Produkte
-            # ------------------------------------------------------------
-            admission = admission_by_invoice.get(i.pk)
-
-            if admission:
-                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.sachkonto, self.settings.steuerschluessel, admission["total_gross"], self.get_buchungstext(i, admission["quantity"]))
-                yield combine_line(invoice_data, sachkonto_buchung)
-                first_line = False
-
-            # ------------------------------------------------------------
-            # Zusatzprodukte
-            # ------------------------------------------------------------
-            for additional in additional_by_invoice.get(i.pk, []):
+            for line in lines_by_invoice.get(i.pk, []):
                 if first_line:
                     first_line = False
                 else:
                     invoice_data = [''] * 17
 
-                quantity = f'{additional["quantity"]} x ' if additional["quantity"] > 1 else ''
-                sachkonto_buchung = self.prepare_sachkonto_buchung(i, self.settings.sachkonto_zusatz, self.settings.steuerschluessel_zusatz, additional["total_gross"], f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{additional["item__name"]}')
+                # Sachkonto und Steuerschlüssel abhängig vom Produkttyp
+                if line["item__admission"]:
+                    sachkonto = self.settings.sachkonto
+                    steuerschluessel = self.settings.steuerschluessel
+                else:
+                    sachkonto = self.settings.sachkonto_zusatz
+                    steuerschluessel = self.settings.steuerschluessel_zusatz
+                quantity = f'{line["quantity"]} x ' if line["quantity"] > 1 else ''
+                buchungstext = f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{line["item__name"]}'
+                sachkonto_buchung = self.prepare_sachkonto_buchung(
+                    i,
+                    sachkonto,
+                    steuerschluessel,
+                    line["total_gross"],
+                    buchungstext
+                )
                 yield combine_line(invoice_data, sachkonto_buchung)
 
     @staticmethod
