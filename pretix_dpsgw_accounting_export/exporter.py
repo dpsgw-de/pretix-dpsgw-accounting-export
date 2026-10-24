@@ -1,5 +1,6 @@
 import re
 from decimal import Decimal
+from typing import Optional
 
 from django.db.models import Count, Exists, F, OuterRef, Subquery, Sum
 from django.utils.formats import date_format
@@ -260,6 +261,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
             )
             .order_by("invoice", "-item__admission", "item__name")
         )
+        # TODO: Ggf. (aggregierte) Zeilen aussortieren, die den Betrag 0 haben
 
         # Nach Rechnung gruppieren, damit wir die Ausgabe in der gleichen
         # Reihenfolge wie bei iterate_lines erzeugen können.
@@ -292,8 +294,7 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
                 else:
                     sachkonto = self.settings.sachkonto_zusatz
                     steuerschluessel = self.settings.steuerschluessel_zusatz
-                quantity = f'{line["quantity"]} x ' if line["quantity"] > 1 else ''
-                buchungstext = f'{i.invoice_to_company or i.invoice_to_name}: {quantity}{line["item__name"]}'
+                buchungstext = self.get_buchungstext(i, line["quantity"], line["item__name"])
                 sachkonto_buchung = self.prepare_sachkonto_buchung(
                     i,
                     sachkonto,
@@ -311,14 +312,14 @@ class ExtendedInvoiceDataExporter(InvoiceDataExporter):
         return str(kn).strip()
 
     @staticmethod
-    def get_buchungstext(i: Invoice, quantity=None) -> str:
+    def get_buchungstext(i: Invoice, quantity: Optional[int] = None, item_name: Optional[str] = None) -> str:
         kn = ExtendedInvoiceDataExporter.get_kn(i)
         if i.event.date_to is None or i.event.date_from == i.event.date_to:
             buchungstext_datum = date_format(i.date, "d.m.y")
         else:
             buchungstext_datum = format_date_range(i.event.date_from, i.event.date_to)
         quantity_str = f'{quantity} x ' if quantity and quantity > 1 else ''
-        return (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}Teilnahme "
+        return (f"{i.invoice_to_company or i.invoice_to_name}: {quantity_str}{item_name or 'Teilnahme'} "
                 f"{i.event.name} {buchungstext_datum}"
                 + (f" KN{kn}" if kn else ""))
 
